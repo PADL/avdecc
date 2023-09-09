@@ -298,6 +298,14 @@ public:
 	/** Debug method: Returns true if the whole ProtocolInterface is locked by the calling thread */
 	virtual bool isSelfLocked() const noexcept = 0;
 
+	void setApplicationData(void *applicationData) noexcept {
+            _applicationData = applicationData;
+        }
+
+	void *getApplicationData(void) noexcept {
+            return _applicationData;
+        }
+
 	/** Returns true if the specified protocol interface type is supported on the local computer. */
 	static LA_AVDECC_API bool LA_AVDECC_CALL_CONVENTION isSupportedProtocolInterfaceType(Type const protocolInterfaceType) noexcept;
 
@@ -356,6 +364,8 @@ private:
 	networkInterface::MacAddress _networkInterfaceMacAddress{};
 	std::unordered_map<VuAecpdu::ProtocolIdentifier, VendorUniqueDelegate*, VuAecpdu::ProtocolIdentifier::hash> _vendorUniqueDelegates{};
 	std::string _executorName{};
+	/** Application data */
+	void *_applicationData{ nullptr };
 };
 
 /* Operator overloads */

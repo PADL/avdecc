@@ -712,6 +712,31 @@ LA_AVDECC_BINDINGS_C_API avdecc_bool_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_A
 	}
 }
 
+LA_AVDECC_BINDINGS_C_API void *LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_getApplicationData(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle)
+{
+	try
+	{
+		auto& obj = s_ProtocolInterfaceManager.getObject(handle);
+		return obj.getApplicationData();
+	}
+	catch (...)
+	{
+		return nullptr;
+	}
+}
+LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_setApplicationData(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, void *applicationData)
+{
+	try
+	{
+		auto& obj = s_ProtocolInterfaceManager.getObject(handle);
+		obj.setApplicationData(applicationData);
+	}
+	catch (...)
+	{
+	}
+	return static_cast<avdecc_protocol_interface_error_t>(avdecc_protocol_interface_error_no_error);
+}
+
 LA_AVDECC_BINDINGS_C_API avdecc_bool_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_isSupportedProtocolInterfaceType(avdecc_protocol_interface_type_t const protocolInterfaceType)
 {
 	return la::avdecc::protocol::ProtocolInterface::isSupportedProtocolInterfaceType(static_cast<la::avdecc::protocol::ProtocolInterface::Type>(protocolInterfaceType));

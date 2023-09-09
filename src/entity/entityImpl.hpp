@@ -172,6 +172,16 @@ public:
 		return _protocolInterface->isSelfLocked();
 	}
 
+	virtual void setApplicationData(void *applicationData) noexcept override
+	{
+		_applicationData = applicationData;
+	}
+
+	virtual void *getApplicationData(void) const noexcept override
+	{
+		return _applicationData;
+	}
+
 	struct AnswerCallback
 	{
 	public:
@@ -548,6 +558,7 @@ private:
 	// Internal variables
 	std::recursive_mutex _lock{}; // Lock to protect writable fields (not used for the BasicLockable concept of the class itself)
 	protocol::ProtocolInterface* const _protocolInterface{ nullptr }; // Weak reference to the protocolInterface
+	void *_applicationData { nullptr };
 };
 
 /** Class to be used as final LocalEntityImpl inherited class in order to properly shutdown any inflight messages. */

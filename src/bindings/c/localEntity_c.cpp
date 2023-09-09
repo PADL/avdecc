@@ -2359,6 +2359,35 @@ LA_AVDECC_BINDINGS_C_API avdecc_local_entity_error_t LA_AVDECC_BINDINGS_C_CALL_C
 	return static_cast<avdecc_local_entity_error_t>(avdecc_local_entity_error_no_error);
 }
 
+LA_AVDECC_BINDINGS_C_API avdecc_local_entity_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_LocalEntity_setApplicationData(LA_AVDECC_LOCAL_ENTITY_HANDLE const handle, void *applicationData)
+{
+	try
+	{
+		auto& obj = s_AggregateEntityManager.getObject(handle);
+                obj.setApplicationData(applicationData);
+        }
+	catch (...)
+	{
+		return static_cast<avdecc_local_entity_error_t>(avdecc_local_entity_error_invalid_entity_handle);
+	}
+
+	return static_cast<avdecc_local_entity_error_t>(avdecc_local_entity_error_no_error);
+}
+
+LA_AVDECC_BINDINGS_C_API void *LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_LocalEntity_getApplicationData(LA_AVDECC_LOCAL_ENTITY_HANDLE const handle)
+{
+	try
+	{
+		auto& obj = s_AggregateEntityManager.getObject(handle);
+                return obj.getApplicationData();
+        }
+	catch (...)
+	{
+		return nullptr;
+	}
+
+	return nullptr;
+}
 
 /* ************************************************************************** */
 /* LocalEntity private APIs                                                   */

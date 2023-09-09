@@ -473,6 +473,9 @@ public:
 	/** Returns true if the class is already locked by the calling thread */
 	virtual bool isSelfLocked() const noexcept = 0;
 
+	virtual void setApplicationData(void *) noexcept = 0;
+	virtual void *getApplicationData(void) const noexcept = 0;
+
 protected:
 	/** Constructor */
 	LocalEntity(CommonInformation const& commonInformation, InterfacesInformation const& interfacesInformation)
