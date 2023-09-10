@@ -1329,47 +1329,6 @@ typedef struct avdecc_protocol_interface_observer_s
 	void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* onAcmpduReceived)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_acmpdu_cp const /*acmpdu*/);
 } avdecc_protocol_interface_observer_t, *avdecc_protocol_interface_observer_p;
 
-#if __BLOCKS__
-typedef struct avdecc_protocol_interface_block_observer_s
-{
-	/* **** Global notifications **** */
-	void(^ onTransportError)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/);
-
-	/* **** Discovery notifications **** */
-	void(^ onLocalEntityOnline)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_entity_cp const /*entity*/);
-	void(^ onLocalEntityOffline)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_unique_identifier_t const /*entityID*/);
-	void(^ onLocalEntityUpdated)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_entity_cp const /*entity*/);
-	void(^ onRemoteEntityOnline)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_entity_cp const /*entity*/);
-	void(^ onRemoteEntityOffline)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_unique_identifier_t const /*entityID*/);
-	void(^ onRemoteEntityUpdated)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_entity_cp const /*entity*/);
-
-	/* **** AECP notifications **** */
-	/** Notification for when an AECP-AEM Command is received (for a locally registered entity). */
-	void(^ onAecpAemCommand)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_aem_aecpdu_cp const /*aecpdu*/);
-	/** Notification for when an unsolicited AECP-AEM Response is received (for a locally registered entity). */
-	void(^ onAecpAemUnsolicitedResponse)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_aem_aecpdu_cp const /*aecpdu*/);
-	/** Notification for when an identify notification is received (the notification being a multicast message, the notification is triggered even if there are no locally registered entities). */
-	void(^ onAecpAemIdentifyNotification)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_aem_aecpdu_cp const /*aecpdu*/);
-
-	/* **** ACMP notifications **** */
-	/** Notification for when an ACMP Command is received, even for none of the locally registered entities. */
-	void(^ onAcmpCommand)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_acmpdu_cp const /*acmpdu*/);
-	/** Notification for when an ACMP Response is received, even for none of the locally registered entities and for responses already processed by the CommandStateMachine (meaning the sendAcmpCommand result handler have already been called). */
-	void(^ onAcmpResponse)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_acmpdu_cp const /*acmpdu*/);
-
-	/* **** Low level notifications (not supported by all kinds of ProtocolInterface), triggered before processing the pdu **** */
-	/** Notification for when an ADPDU is received (might be a message that was sent by self as this event might be triggered for outgoing messages) */
-	void(^ onAdpduReceived)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_adpdu_cp const /*adpdu*/);
-	/** Notification for when an AEM-AECPDU is received (might be a message that was sent by self as this event might be triggered for outgoing messages) */
-	void(^ onAemAecpduReceived)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_aem_aecpdu_cp const /*aecpdu*/);
-	/** Notification for when an AA-AECPDU is received (might be a message that was sent by self as this event might be triggered for outgoing messages) */
-	/** Notification for when an MVU-AECPDU is received (might be a message that was sent by self as this event might be triggered for outgoing messages) */
-	void(^ onMvuAecpduReceived)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_mvu_aecpdu_cp const /*aecpdu*/);
-	/** Notification for when an ACMPDU is received (might be a message that was sent by self as this event might be triggered for outgoing messages) */
-	void(^ onAcmpduReceived)(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const /*handle*/, avdecc_protocol_acmpdu_cp const /*acmpdu*/);
-} avdecc_protocol_interface_block_observer_t, *avdecc_protocol_interface_block_observer_p;
-#endif /* __BLOCKS__ */
-
 // Result Handlers
 typedef void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* avdecc_protocol_interfaces_send_aem_aecp_command_cb)(avdecc_protocol_aem_aecpdu_cp const response, avdecc_protocol_interface_error_t const error);
 typedef void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* avdecc_protocol_interfaces_send_mvu_aecp_command_cb)(avdecc_protocol_mvu_aecpdu_cp const response, avdecc_protocol_interface_error_t const error);
@@ -1424,8 +1383,6 @@ LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_
 LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_unlock(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle);
 LA_AVDECC_BINDINGS_C_API avdecc_bool_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_isSelfLocked(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle);
 #if __BLOCKS__
-LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_registerObserver_block(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_protocol_interface_block_observer_p const observer);
-LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_unregisterObserver_block(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_protocol_interface_block_observer_p const observer);
 LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_sendAemAecpCommand_block(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_protocol_aem_aecpdu_cp const aecpdu, avdecc_protocol_interfaces_send_aem_aecp_command_block const onResult);
 LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_sendMvuAecpCommand_block(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_protocol_mvu_aecpdu_cp const aecpdu, avdecc_protocol_interfaces_send_mvu_aecp_command_block const onResult);
 LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_sendAcmpCommand_block(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_protocol_acmpdu_cp const acmpdu, avdecc_protocol_interfaces_send_acmp_command_block const onResult);
