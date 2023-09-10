@@ -343,7 +343,7 @@ private:
 /* ************************************************************************** */
 /* LocalEntity APIs                                                           */
 /* ************************************************************************** */
-static la::avdecc::bindings::HandleManager<la::avdecc::entity::AggregateEntity::UniquePointer> s_AggregateEntityManager{};
+la::avdecc::bindings::HandleManager<la::avdecc::entity::AggregateEntity::UniquePointer> s_AggregateEntityManager{};
 static la::avdecc::bindings::HandleManager<Delegate*> s_ControllerDelegateManager{};
 
 LA_AVDECC_BINDINGS_C_API avdecc_local_entity_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_LocalEntity_create(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_entity_cp const entity, avdecc_local_entity_controller_delegate_p const delegate, LA_AVDECC_LOCAL_ENTITY_HANDLE* const createdLocalEntityHandle)

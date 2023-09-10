@@ -53,6 +53,17 @@
 #	include <filesystem>
 #endif // __cpp_lib_filesystem >= 201703L
 
+#if __BLOCKS__
+# if __has_include(<Block.h>)
+#  include <Block.h>
+# elif __has_include(<Block/Block.h>)
+#  include <Block/Block.h>
+# else
+extern "C" void *_Block_copy(const void *);
+extern "C" void _Block_release(const void *);
+# endif
+#endif
+
 namespace la
 {
 namespace avdecc
@@ -477,6 +488,22 @@ struct closure_traits<Ret(__stdcall* const)(Args...)>
 	using arg_type = typename std::tuple_element<N, std::tuple<Args...>>::type;
 };
 #endif // _WIN32 && !_WIN64
+
+#if __BLOCKS__
+// Block specialization
+template<typename Ret, typename... Args>
+struct closure_traits<Ret (^)(Args...)>
+{
+	static size_t const arg_count = sizeof...(Args);
+	using result_type = Ret;
+	using args_as_tuple = std::tuple<Args...>;
+	using closure_type = Ret (^)(Args...);
+	using is_const = std::true_type;
+
+	template<size_t N>
+	using arg_type = typename std::tuple_element<N, std::tuple<Args...>>::type;
+};
+#endif
 
 /** Class to easily manipulate an enum that represents a bitfield (strongly typed alternative to traits). */
 template<typename EnumType, typename = std::enable_if_t<std::is_enum<EnumType>::value>>
@@ -932,7 +959,7 @@ CallableReturnType<CallableType> invokeProtectedHandler(CallableType&& handler, 
 		catch (std::exception const& e)
 		{
 			/* Forcing the assert to fail, but with code so we don't get a warning on gcc */
-			AVDECC_ASSERT(handler == nullptr, (std::string("invokeProtectedHandler caught an exception in handler: ") + e.what()).c_str());
+			AVDECC_ASSERT(!handler, (std::string("invokeProtectedHandler caught an exception in handler: ") + e.what()).c_str());
 			(void)e;
 		}
 		catch (...)
@@ -1629,6 +1656,77 @@ public:
 	{ \
 		*this \
 	}
+
+#if __BLOCKS__
+// Block smart pointer
+template <typename Ret, typename... Args>
+class Block final
+{
+	typedef Ret (^BlockType)(Args...);
+public:
+	Block(BlockType const &block) noexcept
+	{
+		if (block)
+			::_Block_copy(block);
+		_block = block;
+        }
+
+	~Block()
+	{
+		if (_block)
+			::_Block_release(_block);
+	}
+
+	Block &operator=(const Block &block) noexcept
+	{
+		if (block._block)
+			::_Block_copy(block._block);
+		if (_block)
+			::_Block_release(_block);
+		_block = block._block;
+
+		return *this;
+	}
+
+	Block(const Block &block) noexcept
+	{
+		if (block._block)
+			::_Block_copy(block._block);
+		_block = block._block;
+	}
+
+	Block(Block &&dyingObj) noexcept
+	{
+		*this = std::move(dyingObj);
+	}
+
+	Block &operator=(Block &&dyingObj) noexcept
+	{
+		if (_block)
+			::_Block_release(_block);
+		_block = dyingObj._block;
+		dyingObj._block = nullptr;
+
+		return *this;
+	}
+
+	BlockType get() const { return _block; }
+	BlockType operator->() const { return _block; }
+
+	explicit operator bool() const noexcept
+	{
+		return _block != nullptr;
+	}
+
+	Ret operator()(Args && ... arg) const noexcept
+	{
+		return _block(std::forward<Args>(arg)...);
+	}
+
+private:
+	BlockType _block;
+};
+#endif /* __BLOCKS__ */
 
 } // namespace utils
 } // namespace avdecc

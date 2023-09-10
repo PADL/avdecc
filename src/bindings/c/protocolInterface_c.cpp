@@ -182,7 +182,7 @@ private:
 /* ************************************************************************** */
 /* ProtocolInterface APIs                                                     */
 /* ************************************************************************** */
-static la::avdecc::bindings::HandleManager<la::avdecc::protocol::ProtocolInterface::UniquePointer> s_ProtocolInterfaceManager{};
+la::avdecc::bindings::HandleManager<la::avdecc::protocol::ProtocolInterface::UniquePointer> s_ProtocolInterfaceManager{};
 static la::avdecc::bindings::HandleManager<Observer*> s_ProtocolInterfaceObserverManager{};
 
 LA_AVDECC_BINDINGS_C_API avdecc_protocol_interface_error_t LA_AVDECC_BINDINGS_C_CALL_CONVENTION LA_AVDECC_ProtocolInterface_getExecutorName(LA_AVDECC_PROTOCOL_INTERFACE_HANDLE const handle, avdecc_fixed_string_t const executorName)
