@@ -31,6 +31,14 @@
 #ifdef _WIN32
 #	include <Windows.h>
 #endif // _WIN32
+#ifdef __linux__
+#include <sys/stat.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <ctype.h>
+#include <limits.h>
+#endif
 
 namespace la
 {
@@ -38,6 +46,40 @@ namespace avdecc
 {
 namespace watchDog
 {
+#if __linux__
+static bool IsDebuggerPresent()
+{
+    // https://itecnote.com/tecnote/linux-how-to-detect-if-the-current-process-is-being-run-by-gdb/
+    char buf[PATH_MAX + 1];
+
+    const int status_fd = ::open("/proc/self/status", O_RDONLY);
+    if (status_fd == -1)
+        return false;
+
+    const ssize_t num_read = ::read(status_fd, buf, sizeof(buf) - 1);
+    ::close(status_fd);
+
+    if (num_read <= 0)
+        return false;
+
+    buf[num_read] = '\0';
+    constexpr char tracerPidString[] = "TracerPid:";
+    const auto tracer_pid_ptr = ::strstr(buf, tracerPidString);
+    if (!tracer_pid_ptr)
+        return false;
+
+    for (const char* characterPtr = tracer_pid_ptr + sizeof(tracerPidString) - 1; characterPtr <= buf + num_read; ++characterPtr)
+    {
+        if (::isspace(*characterPtr))
+            continue;
+        else
+            return ::isdigit(*characterPtr) != 0 && *characterPtr != '0';
+    }
+
+    return false;
+}
+#endif
+
 class WatchDogImpl final : public WatchDog
 {
 private:
@@ -68,7 +110,7 @@ public:
 						{
 							for (auto& [name, watchInfo] : watchedMap)
 							{
-#ifdef _WIN32
+#if defined(_WIN32_) || defined(__linux__)
 								// If debugger is present, update the last alive time and don't check the timeout
 								if (IsDebuggerPresent())
 								{
