@@ -37,6 +37,7 @@ set(SOURCE_FILES_COMMON
 	protocolAdpdu_c.cpp
 	localEntity_c.cpp
 	localEntity_c_block.cpp
+	localEntity_cxx_block.cpp
 	protocolInterface_c.cpp
 	protocolInterface_c_block.cpp
 )
