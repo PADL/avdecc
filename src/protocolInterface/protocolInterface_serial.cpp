@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2016-2024, L-Acoustics and its contributors
+* Copyright (C) 2024, L-Acoustics and its contributors
 
 * This file is part of LA_avdecc.
 
@@ -61,8 +61,6 @@ namespace avdecc
 namespace protocol
 {
 
-static networkInterface::MacAddress Multicast_Mac_Address{ { 0x91, 0xe0, 0xf0, 0x01, 0x00, 0x00 } };
-
 class ProtocolInterfaceSerialImpl final : public ProtocolInterfaceSerial, private stateMachine::ProtocolInterfaceDelegate, private stateMachine::AdvertiseStateMachine::Delegate, private stateMachine::DiscoveryStateMachine::Delegate, private stateMachine::CommandStateMachine::Delegate
 {
 public:
@@ -88,6 +86,9 @@ public:
 				throw Exception(Error::TransportError, "Failed to enable non-blocking I/O on serial port");
 			}
 		}
+
+		// optionally disambiguate multiple ProtocolInterfaceSerial instances by placing
+		// device major/minor ID in MAC address
 
 		struct ::stat statbuf;
 		if (fstat(_fd, &statbuf) == 0)
@@ -573,17 +574,11 @@ private:
 			{
 				std::uint8_t const* avtpdu = msg.data(); // Start of AVB Transport Protocol
 				auto avtpdu_size = msg.size();
-				// Check AVTP control bit (meaning AVDECC packet)
-				std::uint8_t avtp_sub_type_control = avtpdu[0];
-				if ((avtp_sub_type_control & 0xF0) == 0)
-				{
-					return;
-				}
 
 				auto etherLayer2 = EtherLayer2{};
 				etherLayer2.setEtherType(AvtpEtherType);
 				etherLayer2.setSrcAddress(_peerAddress);
-				etherLayer2.setDestAddress(Multicast_Mac_Address);
+				etherLayer2.setDestAddress(getMacAddress());
 
 				// Try to detect possible deadlock
 				{
@@ -614,21 +609,22 @@ private:
 			pollfd.events = POLLIN;
 			pollfd.revents = 0;
 
-			auto const err = poll(&pollfd, 1, -1);
-			if (err < 0)
-			{
-				LOG_GENERIC_DEBUG(std::string("poll() failed: ") + std::strerror(errno));
-				break;
-			}
-
-			if (pollfd.events != POLLIN)
-				continue;
-
 			if (state == State::SubType)
 			{
 				payloadOffset = 0;
 				bytesToRead = 1;
 				controlDataLength = 0;
+			}
+
+			auto const err = poll(&pollfd, 1, _timeout); // timeout so we can check _shouldTerminate
+			if (err < 0)
+			{
+				LOG_GENERIC_DEBUG(std::string("poll() failed: ") + std::strerror(errno));
+				break;
+			}
+			else if (err == 0 || pollfd.events != POLLIN)
+			{
+				continue; // timed out or no input events
 			}
 
 			auto const bytesRead = read(_fd, &payloadBuffer[payloadOffset], bytesToRead);
@@ -670,7 +666,7 @@ private:
 				}
 				case State::ControlDataLength:
 					controlDataLength = payloadBuffer[2] << 8 | payloadBuffer[3];
-					if (controlDataLength <= AvtpMaxPayloadLength)
+					if (controlDataLength <= AvtpMaxPayloadLength - AvtpduControl::HeaderLength)
 					{
 						state = State::EntityID_ControlData;
 						bytesToRead = 8 /* entityID */ + controlDataLength;
@@ -681,7 +677,8 @@ private:
 					}
 					break;
 				case State::EntityID_ControlData:
-					auto message = la::avdecc::MemoryBuffer{ payloadBuffer, AvtpduControl::HeaderLength + controlDataLength };
+					AVDECC_ASSERT(payloadOffset == AvtpduControl::HeaderLength + controlDataLength, "Invalid payload offset");
+					auto message = la::avdecc::MemoryBuffer{ payloadBuffer, payloadOffset };
 					processRawPacket(std::move(message));
 					state = State::SubType;
 					break;
@@ -701,7 +698,7 @@ private:
 			pollfd.events = POLLOUT;
 			pollfd.revents = 0;
 
-			auto const err = poll(&pollfd, 1, -1);
+			auto const err = poll(&pollfd, 1, -1); // blocking write
 			if (err < 0)
 				return Error::TransportError;
 
@@ -733,6 +730,7 @@ private:
 	std::thread _captureThread{};
 	friend class EthernetPacketDispatcher<ProtocolInterfaceSerialImpl>;
 	EthernetPacketDispatcher<ProtocolInterfaceSerialImpl> _ethernetPacketDispatcher{ this, _stateMachineManager };
+	const int _timeout = 250u;
 };
 
 ProtocolInterfaceSerial::ProtocolInterfaceSerial(std::string const& networkInterfaceName, std::string const& executorName)
@@ -742,14 +740,7 @@ ProtocolInterfaceSerial::ProtocolInterfaceSerial(std::string const& networkInter
 
 bool ProtocolInterfaceSerial::isSupported() noexcept
 {
-	try
-	{
-		return true;
-	}
-	catch (...)
-	{
-		return false;
-	}
+	return true;
 }
 
 ProtocolInterfaceSerial* ProtocolInterfaceSerial::createRawProtocolInterfaceSerial(std::string const& networkInterfaceName, std::string const& executorName)
