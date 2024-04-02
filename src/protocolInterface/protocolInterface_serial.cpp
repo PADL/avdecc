@@ -74,35 +74,35 @@ public:
 		: ProtocolInterfaceSerial(networkInterfaceName, executorName)
 	{
 		// Get file descriptor
-        _fd = ::open(networkInterfaceName.c_str(), O_RDWR);
-        if (_fd < 0)
-        {
-            throw Exception(Error::TransportError, "Failed to open serial port");
-        }
+		_fd = ::open(networkInterfaceName.c_str(), O_RDWR);
+		if (_fd < 0)
+		{
+			throw Exception(Error::TransportError, "Failed to open serial port");
+		}
 
-        auto flags = ::fcntl(_fd, F_GETFL, 0);
-        if ((flags & O_NONBLOCK) == 0)
-        {
-            if (::fcntl(_fd, F_SETFL, flags | O_NONBLOCK) < 0)
-            {
-                throw Exception(Error::TransportError, "Failed to enable non-blocking I/O on serial port");
-            }
-        }
+		auto flags = ::fcntl(_fd, F_GETFL, 0);
+		if ((flags & O_NONBLOCK) == 0)
+		{
+			if (::fcntl(_fd, F_SETFL, flags | O_NONBLOCK) < 0)
+			{
+				throw Exception(Error::TransportError, "Failed to enable non-blocking I/O on serial port");
+			}
+		}
 
-        struct ::stat statbuf;
-        if (fstat(_fd, &statbuf) == 0)
-        {
-            _peerAddress[3] = major(statbuf.st_rdev) & 0xff;
-            _peerAddress[4] = minor(statbuf.st_rdev) >> 8 & 0xff;
-            _peerAddress[5] = minor(statbuf.st_rdev) & 0xff;
-        }
+		struct ::stat statbuf;
+		if (fstat(_fd, &statbuf) == 0)
+		{
+			_peerAddress[3] = major(statbuf.st_rdev) & 0xff;
+			_peerAddress[4] = minor(statbuf.st_rdev) >> 8 & 0xff;
+			_peerAddress[5] = minor(statbuf.st_rdev) & 0xff;
+		}
 
 		// Start the capture thread
 		_captureThread = std::thread(
 			[this]
 			{
 				utils::setCurrentThreadName("avdecc::SerialInterface::Capture");
-                serialReceiveLoop();
+				serialReceiveLoop();
 				if (!_shouldTerminate)
 				{
 					notifyObserversMethod<ProtocolInterface::Observer>(&ProtocolInterface::Observer::onTransportError, this);
@@ -153,10 +153,10 @@ private:
 		la::avdecc::ExecutorManager::getInstance().flush(getExecutorName());
 
 		// Close underlying file descriptor.
-        if (_fd != -1)
-        {
-            close(_fd);
-        }
+		if (_fd != -1)
+		{
+			close(_fd);
+		}
 	}
 
 	virtual UniqueIdentifier getDynamicEID() const noexcept override
@@ -566,170 +566,168 @@ private:
 	/* ************************************************************ */
 	/* Private methods                                              */
 	/* ************************************************************ */
-    void processRawPacket(la::avdecc::MemoryBuffer&& packet) const noexcept
-    {
-        la::avdecc::ExecutorManager::getInstance().pushJob(getExecutorName(),
-            [this, msg = std::move(packet)]()
-            {
-                std::uint8_t const* avtpdu = msg.data(); // Start of AVB Transport Protocol
-                auto avtpdu_size = msg.size();
-                // Check AVTP control bit (meaning AVDECC packet)
-                std::uint8_t avtp_sub_type_control = avtpdu[0];
-                if ((avtp_sub_type_control & 0xF0) == 0)
-                {
-                    return;
-                }
-            
-            auto etherLayer2 = EtherLayer2{};
-            etherLayer2.setEtherType(AvtpEtherType);
-            etherLayer2.setSrcAddress(_peerAddress);
-            etherLayer2.setDestAddress(Multicast_Mac_Address);
+	void processRawPacket(la::avdecc::MemoryBuffer&& packet) const noexcept
+	{
+		la::avdecc::ExecutorManager::getInstance().pushJob(getExecutorName(),
+			[this, msg = std::move(packet)]()
+			{
+				std::uint8_t const* avtpdu = msg.data(); // Start of AVB Transport Protocol
+				auto avtpdu_size = msg.size();
+				// Check AVTP control bit (meaning AVDECC packet)
+				std::uint8_t avtp_sub_type_control = avtpdu[0];
+				if ((avtp_sub_type_control & 0xF0) == 0)
+				{
+					return;
+				}
 
-                // Try to detect possible deadlock
-                {
-                    _watchDog.registerWatch("avdecc::SerialInterface::dispatchAvdeccMessage::" + utils::toHexString(reinterpret_cast<size_t>(this)), std::chrono::milliseconds{ 1000u }, true);
-                    _ethernetPacketDispatcher.dispatchAvdeccMessage(avtpdu, avtpdu_size, etherLayer2);
-                    _watchDog.unregisterWatch("avdecc::SerialInterface::dispatchAvdeccMessage::" + utils::toHexString(reinterpret_cast<size_t>(this)), true);
-                }
-            });
-    }
+				auto etherLayer2 = EtherLayer2{};
+				etherLayer2.setEtherType(AvtpEtherType);
+				etherLayer2.setSrcAddress(_peerAddress);
+				etherLayer2.setDestAddress(Multicast_Mac_Address);
 
-    void serialReceiveLoop(void) noexcept
-    {
-        enum class State : std::uint8_t {
-            SubType,
-            Version,
-            ControlDataLength,
-            EntityID_ControlData
-        } state = State::SubType;
-        struct ::pollfd pollfd;
-        std::uint8_t payloadBuffer[AvtpMaxPayloadLength];
-        std::uint16_t payloadOffset, bytesToRead, controlDataLength;
+				// Try to detect possible deadlock
+				{
+					_watchDog.registerWatch("avdecc::SerialInterface::dispatchAvdeccMessage::" + utils::toHexString(reinterpret_cast<size_t>(this)), std::chrono::milliseconds{ 1000u }, true);
+					_ethernetPacketDispatcher.dispatchAvdeccMessage(avtpdu, avtpdu_size, etherLayer2);
+					_watchDog.unregisterWatch("avdecc::SerialInterface::dispatchAvdeccMessage::" + utils::toHexString(reinterpret_cast<size_t>(this)), true);
+				}
+			});
+	}
 
-        pollfd.fd = _fd;
+	void serialReceiveLoop(void) noexcept
+	{
+		enum class State : std::uint8_t
+		{
+			SubType,
+			Version,
+			ControlDataLength,
+			EntityID_ControlData
+		} state = State::SubType;
+		struct ::pollfd pollfd;
+		std::uint8_t payloadBuffer[AvtpMaxPayloadLength];
+		std::uint16_t payloadOffset, bytesToRead, controlDataLength;
 
-        while (!_shouldTerminate)
-        {
-            pollfd.events = POLLIN;
-            pollfd.revents = 0;
+		pollfd.fd = _fd;
 
-            auto const err = poll(&pollfd, 1, -1);
-            if (err < 0)
-            {
-                LOG_GENERIC_DEBUG(std::string("poll() failed: ") + std::strerror(errno));
-                break;
-            }
+		while (!_shouldTerminate)
+		{
+			pollfd.events = POLLIN;
+			pollfd.revents = 0;
 
-            if (pollfd.events != POLLIN)
-                continue;
-            
-            if (state == State::SubType)
-            {
-                payloadOffset = 0;
-                bytesToRead = 1;
-                controlDataLength = 0;
-            }
+			auto const err = poll(&pollfd, 1, -1);
+			if (err < 0)
+			{
+				LOG_GENERIC_DEBUG(std::string("poll() failed: ") + std::strerror(errno));
+				break;
+			}
 
-            auto const bytesRead = read(_fd, &payloadBuffer[payloadOffset], bytesToRead);
-            if (bytesRead == 0 || (bytesRead < 0 && errno == EAGAIN))
-                continue;
-            else if (bytesRead < 0)
-                break;
+			if (pollfd.events != POLLIN)
+				continue;
 
-            payloadOffset += bytesRead;
-            bytesToRead -= bytesRead;
+			if (state == State::SubType)
+			{
+				payloadOffset = 0;
+				bytesToRead = 1;
+				controlDataLength = 0;
+			}
 
-            if (bytesToRead != 0)
-                continue;
+			auto const bytesRead = read(_fd, &payloadBuffer[payloadOffset], bytesToRead);
+			if (bytesRead == 0 || (bytesRead < 0 && errno == EAGAIN))
+				continue;
+			else if (bytesRead < 0)
+				break;
 
-            switch (state)
-            {
-                case State::SubType:
-                {
-                    auto subType = payloadBuffer[0] & 0x7f;
+			payloadOffset += bytesRead;
+			bytesToRead -= bytesRead;
 
-                    if ((payloadBuffer[0] & 0x80) == 0x80 &&
-                        (subType == AvtpSubType_Adp || subType == AvtpSubType_Aecp || subType == AvtpSubType_Acmp))
-                    {
-                        state = State::Version;
-                        bytesToRead = 1;
-                    }
-                    break;
-                }
-                case State::Version:
-                {
-                    auto version = (payloadBuffer[1] & 0x70) >> 4;
-                    if (version == AvtpVersion)
-                    {
-                        state = State::ControlDataLength;
-                        bytesToRead = 2;
-                    }
-                    else
-                    {
-                        state = State::SubType;
-                    }
-                    break;
-                }
-                case State::ControlDataLength:
-                    controlDataLength = payloadBuffer[2] << 8 | payloadBuffer[3];
-                    if (controlDataLength <= AvtpMaxPayloadLength)
-                    {
-                        state = State::EntityID_ControlData;
-                        bytesToRead = 8 /* entityID */ + controlDataLength;
-                    }
-                    else
-                    {
-                        state = State::SubType;
-                    }
-                    break;
-                case State::EntityID_ControlData:
-                    auto message = la::avdecc::MemoryBuffer{ payloadBuffer, AvtpduControl::HeaderLength + controlDataLength };
-                    processRawPacket(std::move(message));
-                    state = State::SubType;
-                    break;
-            }
-        }
-    }
+			if (bytesToRead != 0)
+				continue;
+
+			switch (state)
+			{
+				case State::SubType: {
+					auto subType = payloadBuffer[0] & 0x7f;
+
+					if ((payloadBuffer[0] & 0x80) == 0x80 && (subType == AvtpSubType_Adp || subType == AvtpSubType_Aecp || subType == AvtpSubType_Acmp))
+					{
+						state = State::Version;
+						bytesToRead = 1;
+					}
+					break;
+				}
+				case State::Version: {
+					auto version = (payloadBuffer[1] & 0x70) >> 4;
+					if (version == AvtpVersion)
+					{
+						state = State::ControlDataLength;
+						bytesToRead = 2;
+					}
+					else
+					{
+						state = State::SubType;
+					}
+					break;
+				}
+				case State::ControlDataLength:
+					controlDataLength = payloadBuffer[2] << 8 | payloadBuffer[3];
+					if (controlDataLength <= AvtpMaxPayloadLength)
+					{
+						state = State::EntityID_ControlData;
+						bytesToRead = 8 /* entityID */ + controlDataLength;
+					}
+					else
+					{
+						state = State::SubType;
+					}
+					break;
+				case State::EntityID_ControlData:
+					auto message = la::avdecc::MemoryBuffer{ payloadBuffer, AvtpduControl::HeaderLength + controlDataLength };
+					processRawPacket(std::move(message));
+					state = State::SubType;
+					break;
+			}
+		}
+	}
 
 	Error sendPacket(SerializationBuffer const& buffer) const noexcept
 	{
-        struct pollfd pollfd;
-        size_t bytesRemaining = buffer.size();
+		struct pollfd pollfd;
+		size_t bytesRemaining = buffer.size();
 
-        pollfd.fd = _fd;
-        
-        while (bytesRemaining > 0)
-        {
-            pollfd.events = POLLOUT;
-            pollfd.revents = 0;
+		pollfd.fd = _fd;
 
-            auto const err = poll(&pollfd, 1, -1);
-            if (err < 0)
-                return Error::TransportError;
-            
-            if (pollfd.revents != POLLOUT)
-                continue;
-            
-            auto bytesWritten = write(_fd, buffer.data() + buffer.size() - bytesRemaining, bytesRemaining);
-            if (bytesWritten < 0)
-            {
-                if (errno == EAGAIN)
-                    continue;
-                else
-                    return Error::TransportError;
-            }
-            
-            bytesRemaining -= bytesWritten;
-        }
-        
-        return Error::NoError;
+		while (bytesRemaining > 0)
+		{
+			pollfd.events = POLLOUT;
+			pollfd.revents = 0;
+
+			auto const err = poll(&pollfd, 1, -1);
+			if (err < 0)
+				return Error::TransportError;
+
+			if (pollfd.revents != POLLOUT)
+				continue;
+
+			auto bytesWritten = write(_fd, buffer.data() + buffer.size() - bytesRemaining, bytesRemaining);
+			if (bytesWritten < 0)
+			{
+				if (errno == EAGAIN)
+					continue;
+				else
+					return Error::TransportError;
+			}
+
+			bytesRemaining -= bytesWritten;
+		}
+
+		return Error::NoError;
 	}
 
 	// Private variables
 	watchDog::WatchDog::SharedPointer _watchDogSharedPointer{ watchDog::WatchDog::getInstance() };
 	watchDog::WatchDog& _watchDog{ *_watchDogSharedPointer };
 	int _fd{ -1 };
-    networkInterface::MacAddress _peerAddress{0x0a, 0xe9, 0x1b}; // PADL CID
+	networkInterface::MacAddress _peerAddress{ 0x0a, 0xe9, 0x1b }; // PADL CID
 	bool _shouldTerminate{ false };
 	mutable stateMachine::Manager _stateMachineManager{ this, this, this, this, this };
 	std::thread _captureThread{};
@@ -746,7 +744,7 @@ bool ProtocolInterfaceSerial::isSupported() noexcept
 {
 	try
 	{
-        return true;
+		return true;
 	}
 	catch (...)
 	{
