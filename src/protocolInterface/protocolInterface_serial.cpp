@@ -596,10 +596,15 @@ private:
 
     void serialReceiveLoop(void) noexcept
     {
-        enum class State : std::uint8_t { Synchronizing, ReadingHeader, ReadingPdu } state = State::ReadingHeader;
+        enum class State : std::uint8_t {
+            SubType,
+            Version,
+            ControlDataLength,
+            EntityID_ControlData
+        } state = State::SubType;
         struct ::pollfd pollfd;
         std::uint8_t payloadBuffer[AvtpMaxPayloadLength];
-        std::size_t payloadOffset = 0, bytesToRead = 1, controlDataLength;
+        std::uint16_t payloadOffset, bytesToRead, controlDataLength;
 
         pollfd.fd = _fd;
 
@@ -617,70 +622,70 @@ private:
 
             if (pollfd.events != POLLIN)
                 continue;
+            
+            if (state == State::SubType)
+            {
+                payloadOffset = 0;
+                bytesToRead = 1;
+                controlDataLength = 0;
+            }
 
             auto const bytesRead = read(_fd, &payloadBuffer[payloadOffset], bytesToRead);
             if (bytesRead == 0 || (bytesRead < 0 && errno == EAGAIN))
-            {
                 continue;
-            }
             else if (bytesRead < 0)
-            {
                 break;
-            }
 
-            if (state != State::Synchronizing)
-            {
-                payloadOffset += bytesRead;
-                bytesToRead -= bytesRead;
-            }
+            payloadOffset += bytesRead;
+            bytesToRead -= bytesRead;
 
-            // TODO: reset state to State::Synchronizing if we get an error
+            if (bytesToRead != 0)
+                continue;
 
             switch (state)
             {
-                case State::Synchronizing:
+                case State::SubType:
                 {
-                    auto subtype = payloadBuffer[0] & 0x7f;
+                    auto subType = payloadBuffer[0] & 0x7f;
 
                     if ((payloadBuffer[0] & 0x80) == 0x80 &&
-                        (subtype == AvtpSubType_Adp || subtype == AvtpSubType_Aecp || subtype == AvtpSubType_Acmp))
+                        (subType == AvtpSubType_Adp || subType == AvtpSubType_Aecp || subType == AvtpSubType_Acmp))
                     {
-                        state = State::ReadingHeader;
-                        payloadOffset = 1;
-                        bytesToRead = AvtpduControl::HeaderLength - 1;
+                        state = State::Version;
+                        bytesToRead = 1;
                     }
                     break;
                 }
-                case State::ReadingHeader:
+                case State::Version:
                 {
-                    if (payloadOffset < AvtpduControl::HeaderLength)
+                    auto version = (payloadBuffer[1] & 0x70) >> 4;
+                    if (version == AvtpVersion)
                     {
-                        break;
+                        state = State::ControlDataLength;
+                        bytesToRead = 2;
                     }
-
-                    auto des = DeserializationBuffer(payloadBuffer, payloadOffset);
-
-                    std::uint8_t cd_subType;
-                    std::uint8_t hs_vers_cd;
-                    std::uint16_t st_cdl;
-
-                    des >> cd_subType >> hs_vers_cd >> st_cdl;
-                    bytesToRead = controlDataLength = st_cdl & 0x7ff;
-                    state = State::ReadingPdu;
+                    else
+                    {
+                        state = State::SubType;
+                    }
                     break;
                 }
-                case State::ReadingPdu:
-                    if (payloadOffset < AvtpduControl::HeaderLength + controlDataLength)
+                case State::ControlDataLength:
+                    controlDataLength = payloadBuffer[2] << 8 | payloadBuffer[3];
+                    if (controlDataLength <= AvtpMaxPayloadLength)
                     {
-                        break;
+                        state = State::EntityID_ControlData;
+                        bytesToRead = 8 /* entityID */ + controlDataLength;
                     }
-
-                    auto message = la::avdecc::MemoryBuffer{ payloadBuffer, payloadOffset };
+                    else
+                    {
+                        state = State::SubType;
+                    }
+                    break;
+                case State::EntityID_ControlData:
+                    auto message = la::avdecc::MemoryBuffer{ payloadBuffer, AvtpduControl::HeaderLength + controlDataLength };
                     processRawPacket(std::move(message));
-                    state = State::ReadingHeader;
-                    payloadOffset = 0;
-                    bytesToRead = AvtpduControl::HeaderLength;
-                    controlDataLength = 0;
+                    state = State::SubType;
                     break;
             }
         }
