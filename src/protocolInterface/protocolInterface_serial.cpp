@@ -89,6 +89,7 @@ public:
 			}
 		}
 
+#if 0
 		// optionally disambiguate multiple ProtocolInterfaceSerial instances by placing
 		// device major/minor ID in MAC address
 
@@ -99,6 +100,7 @@ public:
 			_peerAddress[4] = minor(statbuf.st_rdev) >> 8 & 0xff;
 			_peerAddress[5] = minor(statbuf.st_rdev) & 0xff;
 		}
+#endif
 
 		// Start the capture thread
 		_captureThread = std::thread(
@@ -579,8 +581,8 @@ private:
 
 				auto etherLayer2 = EtherLayer2{};
 				etherLayer2.setEtherType(AvtpEtherType);
-				etherLayer2.setSrcAddress(_peerAddress);
-				etherLayer2.setDestAddress(getMacAddress());
+				etherLayer2.setSrcAddress(getMacAddress()); // zero
+				etherLayer2.setDestAddress(getMacAddress()); // zero
 
 				// Try to detect possible deadlock
 				{
@@ -713,7 +715,7 @@ private:
 	watchDog::WatchDog::SharedPointer _watchDogSharedPointer{ watchDog::WatchDog::getInstance() };
 	watchDog::WatchDog& _watchDog{ *_watchDogSharedPointer };
 	int _fd{ -1 };
-	networkInterface::MacAddress _peerAddress{ 0x0a, 0xe9, 0x1b }; // PADL CID
+	// networkInterface::MacAddress _peerAddress{ 0x0a, 0xe9, 0x1b }; // PADL CID
 	bool _shouldTerminate{ false };
 	mutable stateMachine::Manager _stateMachineManager{ this, this, this, this, this };
 	std::thread _captureThread{};
