@@ -316,6 +316,13 @@ public:
 
 protected:
 	/**
+	* @brief Create a ProtocolInterface not associated with a network interface.
+	* @details Create a ProtocolInterface not associated with a network interface. The MAC address is initialized to zero.
+	* @param[in] executorName The name of the executor to use to dispatch incoming messages.
+	*/
+	ProtocolInterface(std::string const& executorName);
+
+	/**
 	* @brief Create a ProtocolInterface associated with specified network interface name.
 	* @details Create a ProtocolInterface associated with specified network interface name, checking the interface actually exists.
 	* @param[in] networkInterfaceName The name of the network interface.

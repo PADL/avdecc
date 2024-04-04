@@ -49,6 +49,18 @@ namespace avdecc
 {
 namespace protocol
 {
+// constructor for non-network protocol interfaces
+ProtocolInterface::ProtocolInterface(std::string const& executorName)
+	: _executorName{ executorName }
+{
+	// Check if the executor exists
+	if (!ExecutorManager::getInstance().isExecutorRegistered(_executorName))
+	{
+		throw Exception(Error::ExecutorNotInitialized, "The receive executor '" + std::string{ _executorName } + "' is not registered");
+	}
+	_networkInterfaceMacAddress = { 0, 0, 0, 0, 0, 0 };
+}
+
 // Throws an Exception if networkInterfaceName is not usable
 ProtocolInterface::ProtocolInterface(std::string const& networkInterfaceName, std::string const& executorName)
 	: _networkInterfaceName(networkInterfaceName)

@@ -46,15 +46,15 @@
 #include <memory>
 #include <chrono>
 #include <cstdlib>
-#ifdef __linux__
-#	include <csignal>
-#endif // __linux__
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
+#ifdef __linux__
+#	include <sys/sysmacros.h>
+#endif
 
 namespace la
 {
@@ -723,7 +723,7 @@ private:
 };
 
 ProtocolInterfaceSerial::ProtocolInterfaceSerial(std::string const& networkInterfaceName, std::string const& executorName)
-	: ProtocolInterface(networkInterfaceName, executorName)
+	: ProtocolInterface(executorName)
 {
 }
 
