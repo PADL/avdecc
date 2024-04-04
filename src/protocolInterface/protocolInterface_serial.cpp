@@ -591,7 +591,7 @@ private:
 			});
 	}
 
-	static constexpr std::size_t AvtpMaxCobsEncodedPayloadLength = AvtpMaxPayloadLength + (AvtpMaxPayloadLength / 254) + 1;
+	static constexpr std::size_t AvtpMaxCobsEncodedPayloadLength = (1 + AvtpMaxPayloadLength + _COBS_BUFFER_PAD(AvtpMaxPayloadLength) + 1);
 
 	enum class State : std::uint8_t
 	{

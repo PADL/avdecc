@@ -23,11 +23,6 @@ namespace protocol
 #define COBS_DELIM_BYTE 0x00
 
 /**
- * Number of 0x00 pairs for a packet
- */
-#define COBS_ZERO_PAIR_NUM 2
-
-/**
  * Macro to calculate the maximum number of COBS pad bytes with a given payload size 'n'
  * @note Do not use this macro to determine the overhead resulting from a COBS encoding. Use the return value from \ref cobs_encode instead
  */
