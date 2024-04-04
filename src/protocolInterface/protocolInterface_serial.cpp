@@ -34,6 +34,8 @@
 #include "protocolInterface_serial.hpp"
 #include "logHelper.hpp"
 
+#include "cobsSerialization.hpp"
+
 #include <stdexcept>
 #include <sstream>
 #include <array>
@@ -589,123 +591,110 @@ private:
 			});
 	}
 
+	static constexpr std::size_t AvtpMaxCobsEncodedPayloadLength = AvtpMaxPayloadLength + (AvtpMaxPayloadLength / 254) + 1;
+
+	enum class State : std::uint8_t
+	{
+		Synchronizing,
+		Reading,
+		Finished
+	};
+
 	void serialReceiveLoop(void) noexcept
 	{
-		enum class State : std::uint8_t
-		{
-			SubType,
-			Version,
-			ControlDataLength,
-			EntityID_ControlData
-		} state = State::SubType;
 		struct ::pollfd pollfd;
-		std::uint8_t payloadBuffer[AvtpMaxPayloadLength];
-		std::uint16_t payloadOffset, bytesToRead, controlDataLength;
+		std::uint8_t cobsEncodedBuffer[AvtpMaxCobsEncodedPayloadLength];
+		State state = State::Synchronizing;
+		size_t cobsBytesRead;
 
 		pollfd.fd = _fd;
 
 		while (!_shouldTerminate)
 		{
+			std::uint8_t readBuffer[AvtpMaxCobsEncodedPayloadLength];
+
 			pollfd.events = POLLIN;
 			pollfd.revents = 0;
 
-			if (state == State::SubType)
-			{
-				payloadOffset = 0;
-				bytesToRead = 1;
-				controlDataLength = 0;
-			}
+			if (state == State::Synchronizing)
+				cobsBytesRead = 0;
 
 			auto const err = poll(&pollfd, 1, _timeout); // timeout so we can check _shouldTerminate
 			if (err < 0)
-			{
-				LOG_GENERIC_DEBUG(std::string("poll() failed: ") + std::strerror(errno));
 				break;
-			}
 			else if (err == 0 || pollfd.events != POLLIN)
-			{
 				continue; // timed out or no input events
-			}
 
-			auto const bytesRead = read(_fd, &payloadBuffer[payloadOffset], bytesToRead);
+			auto const bytesRead = read(_fd, readBuffer, sizeof(readBuffer));
 			if (bytesRead == 0 || (bytesRead < 0 && errno == EAGAIN))
 				continue;
 			else if (bytesRead < 0)
 				break;
 
-			payloadOffset += bytesRead;
-			bytesToRead -= bytesRead;
-
-			if (bytesToRead != 0)
-				continue;
-
-			switch (state)
+			for (auto i = 0; i < bytesRead; i++)
 			{
-				case State::SubType: {
-					auto subType = payloadBuffer[0] & 0x7f;
+				if (cobsBytesRead >= AvtpMaxCobsEncodedPayloadLength)
+				{
+					state = State::Synchronizing;
+					break;
+				}
 
-					if ((payloadBuffer[0] & 0x80) == 0x80 && (subType == AvtpSubType_Adp || subType == AvtpSubType_Aecp || subType == AvtpSubType_Acmp))
-					{
-						state = State::Version;
-						bytesToRead = 1;
+				switch (state)
+				{
+					case State::Synchronizing:
+						if (readBuffer[i] == COBS_DELIM_BYTE)
+							state = State::Reading;
+						break;
+					case State::Reading:
+						if (readBuffer[i] != COBS_DELIM_BYTE)
+						{
+							cobsEncodedBuffer[cobsBytesRead++] = readBuffer[i];
+							break;
+						}
+						else
+						{
+							state = State::Finished;
+							[[fallthrough]]; // end of frame marker
+						}
+					case State::Finished: {
+						std::uint8_t payloadBuffer[AvtpMaxPayloadLength];
+						auto payloadLength = cobsDecode(cobsEncodedBuffer, cobsBytesRead, payloadBuffer, sizeof(payloadBuffer));
+						if (payloadLength != 0)
+						{
+							auto message = la::avdecc::MemoryBuffer{ payloadBuffer, payloadLength };
+							processRawPacket(std::move(message));
+						}
+						state = State::Synchronizing;
+						break;
 					}
-					break;
 				}
-				case State::Version: {
-					auto version = (payloadBuffer[1] & 0x70) >> 4;
-					if (version == AvtpVersion)
-					{
-						state = State::ControlDataLength;
-						bytesToRead = 2;
-					}
-					else
-					{
-						state = State::SubType;
-					}
-					break;
-				}
-				case State::ControlDataLength:
-					controlDataLength = payloadBuffer[2] << 8 | payloadBuffer[3];
-					if (controlDataLength <= AvtpMaxPayloadLength - AvtpduControl::HeaderLength)
-					{
-						state = State::EntityID_ControlData;
-						bytesToRead = 8 /* entityID */ + controlDataLength;
-					}
-					else
-					{
-						state = State::SubType;
-					}
-					break;
-				case State::EntityID_ControlData:
-					AVDECC_ASSERT(payloadOffset == AvtpduControl::HeaderLength + controlDataLength, "Invalid payload offset");
-					auto message = la::avdecc::MemoryBuffer{ payloadBuffer, payloadOffset };
-					processRawPacket(std::move(message));
-					state = State::SubType;
-					break;
 			}
 		}
 	}
 
 	Error sendPacket(SerializationBuffer const& buffer) const noexcept
 	{
-		struct pollfd pollfd;
-		size_t bytesRemaining = buffer.size();
+		std::uint8_t cobsEncodedBuffer[AvtpMaxCobsEncodedPayloadLength] = { COBS_DELIM_BYTE };
+		auto cobsBytesEncoded = 1 + cobsEncode(buffer.data(), buffer.size(), &cobsEncodedBuffer[1]);
+		cobsEncodedBuffer[cobsBytesEncoded++] = COBS_DELIM_BYTE;
+		auto cobsBytesRemaining = cobsBytesEncoded;
 
+		struct pollfd pollfd;
 		pollfd.fd = _fd;
 
-		while (bytesRemaining > 0)
+		while (cobsBytesRemaining > 0)
 		{
 			pollfd.events = POLLOUT;
 			pollfd.revents = 0;
 
-			auto const err = poll(&pollfd, 1, -1); // blocking write
+			auto const err = poll(&pollfd, 1, -1);
 			if (err < 0)
 				return Error::TransportError;
 
 			if (pollfd.revents != POLLOUT)
 				continue;
 
-			auto bytesWritten = write(_fd, buffer.data() + buffer.size() - bytesRemaining, bytesRemaining);
+			auto bytesWritten = write(_fd, &cobsEncodedBuffer[cobsBytesEncoded - cobsBytesRemaining], cobsBytesRemaining);
 			if (bytesWritten < 0)
 			{
 				if (errno == EAGAIN)
@@ -714,7 +703,7 @@ private:
 					return Error::TransportError;
 			}
 
-			bytesRemaining -= bytesWritten;
+			cobsBytesRemaining -= bytesWritten;
 		}
 
 		return Error::NoError;

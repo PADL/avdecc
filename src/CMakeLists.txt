@@ -223,9 +223,11 @@ endif()
 if(BUILD_AVDECC_INTERFACE_SERIAL)
 	list(APPEND SOURCE_FILES_PROTOCOL_INTERFACE
 		protocolInterface/protocolInterface_serial.cpp
+		protocolInterface/cobsSerialization.cpp
 	)
 	list(APPEND HEADER_FILES_PROTOCOL_INTERFACE
 		protocolInterface/protocolInterface_serial.hpp
+		protocolInterface/cobsSerialization.hpp
 	)
 	list(APPEND ADD_PRIVATE_COMPILE_OPTIONS "-DHAVE_PROTOCOL_INTERFACE_SERIAL")
 endif()

@@ -58,7 +58,7 @@ public:
 	ProtocolInterfaceSerial& operator=(ProtocolInterfaceSerial&&) = delete;
 
 protected:
-	ProtocolInterfaceSerial(std::string const& networkInterfaceName, std::string const& executorName);    
+	ProtocolInterfaceSerial(std::string const& networkInterfaceName, std::string const& executorName);
 };
 
 } // namespace protocol
