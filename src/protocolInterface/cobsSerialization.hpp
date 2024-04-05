@@ -26,6 +26,11 @@ namespace protocol
  * Macro to calculate the maximum number of COBS pad bytes with a given payload size 'n'
  * @note Do not use this macro to determine the overhead resulting from a COBS encoding. Use the return value from \ref cobs_encode instead
  */
+static inline size_t cobsBufferPad(size_t n)
+{
+	return ((n + 254 - 1) & ~(254 - 1)) / 254;
+}
+
 #define _COBS_BUFFER_PAD(n) (((n + 254 - 1) & ~(254 - 1)) / 254)
 
 /**
@@ -47,6 +52,12 @@ std::size_t cobsDecode(const std::uint8_t* input, std::size_t input_length, std:
  * @return the number of bytes written to "output".
  */
 std::size_t cobsEncode(const std::uint8_t* input, std::size_t input_length, std::uint8_t* output);
+
+template<size_t MaximumCobsSize>
+std::size_t cobsEncode(Deserializer input, Serializer<MaximumCobsSize> output);
+
+template<size_t MaximumSize>
+std::size_t cobsDecode(Deserializer input, Serializer<MaximumSize> output);
 
 } // namespace protocol
 } // namespace avdecc

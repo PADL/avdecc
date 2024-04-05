@@ -597,7 +597,7 @@ private:
 		while (!_shouldTerminate)
 		{
 			iovec iov = { .iov_base = payloadBuffer, .iov_len = sizeof(payloadBuffer) };
-			msghdr msg {};
+			msghdr msg{};
 
 			pollfd.events = POLLIN;
 			pollfd.revents = 0;

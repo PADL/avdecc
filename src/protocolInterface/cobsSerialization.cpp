@@ -5,6 +5,8 @@
  * Redistribution and use in source and binary forms are permitted, with or without modification.
  */
 
+#include "la/avdecc/internals/serialization.hpp"
+
 #include "cobsSerialization.hpp"
 
 namespace la
@@ -55,6 +57,42 @@ std::size_t cobsEncode(const std::uint8_t* input, std::size_t input_length, std:
 	return write_index;
 }
 
+template<size_t MaximumCobsSize>
+std::size_t cobsEncode(Deserializer input, Serializer<MaximumCobsSize> output)
+{
+	std::size_t codeIndex = 0;
+	std::uint8_t code = 1;
+	auto inputData = reinterpret_cast<const uint8_t*>(input.data());
+
+	while (input.remaining() > 0)
+	{
+		if (inputData[input.usedBytes()] == 0)
+		{
+			output[codeIndex] = code;
+			code = 1;
+
+			codeIndex = output.usedBytes();
+			output.setPosition(output.usedBytes() + 1);
+			input.setPosition(input.usedBytes() + 1);
+		}
+		else
+		{
+			output << input;
+			code++;
+			if (code == 0xFF)
+			{
+				output[codeIndex] = code;
+				code = 1;
+				codeIndex = output.usedBbytes();
+			}
+		}
+	}
+
+	output[codeIndex] = code;
+
+	return output.usedBytes();
+}
+
 /**
 * Decodes a COBS encoded message
 * @param input [in] pointer to the COBS encoded message
@@ -103,6 +141,33 @@ std::size_t cobsDecode(const std::uint8_t* input, std::size_t input_length, std:
 	}
 
 	return write_index;
+}
+
+template<size_t MaximumSize>
+std::size_t cobsDecode(Deserializer input, Serializer<MaximumSize> output)
+{
+	std::uint8_t code;
+
+	while (input.remaining() > 0)
+	{
+		input >> code;
+
+		if (input.usedBytes() + code > input.size() && code != 1)
+		{
+			return 0;
+		}
+
+		for (auto i = 1; i < code; i++)
+		{
+			input >> output;
+		}
+		if (code != 0xFF && input.usedBytes() != input.size())
+		{
+			output << '\0';
+		}
+	}
+
+	return output.usedBytes();
 }
 
 } // namespace protocol
