@@ -64,7 +64,7 @@ namespace avdecc
 namespace protocol
 {
 
-static const std::map<std::size_t, speed_t> SpeedMap = { { 9600, B9600 }, { 19200, B19200 }, { 38400, B38400 }, { 57600, B57600 }, { 76800, B76800 }, { 115200, B115200 }, { 230400, B230400 } };
+static const std::map<std::size_t, speed_t> SpeedMap = { { 9600, B9600 }, { 19200, B19200 }, { 38400, B38400 }, { 57600, B57600 }, { 115200, B115200 }, { 230400, B230400 } };
 
 class ProtocolInterfaceSerialImpl final : public ProtocolInterfaceSerial, private stateMachine::ProtocolInterfaceDelegate, private stateMachine::AdvertiseStateMachine::Delegate, private stateMachine::DiscoveryStateMachine::Delegate, private stateMachine::CommandStateMachine::Delegate
 {
