@@ -38,7 +38,7 @@ public:
 	/**
 	* @brief Factory method to create a new ProtocolInterfaceSerial.
 	* @details Creates a new ProtocolInterfaceSerial as a raw pointer.
-	* @param[in] networkInterfaceName The TTY device name to use, optionally suffixed with the speed (e.g. /dev/ttyAMA0@115200).
+	* @param[in] networkInterfaceName The TTY device name to use, with the baudrate as an optional suffix (e.g. `/dev/ttyAMA0@115200`).
 	* @param[in] executorName The name of the executor to use to dispatch incoming messages.
 	* @return A new ProtocolInterfaceSerial as a raw pointer.
 	* @note Throws Exception if #interfaceName is invalid or inaccessible.

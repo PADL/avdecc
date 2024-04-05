@@ -71,6 +71,8 @@ namespace protocol
 static const std::map<std::size_t, speed_t> SpeedMap = { { 9600, B9600 }, { 19200, B19200 }, { 38400, B38400 }, { 57600, B57600 }, { 115200, B115200 }, { 230400, B230400 } };
 #endif
 
+static constexpr int SerialReceiveLoopTimeout = 250u;
+
 class ProtocolInterfaceSerialImpl final : public ProtocolInterfaceSerial, private stateMachine::ProtocolInterfaceDelegate, private stateMachine::AdvertiseStateMachine::Delegate, private stateMachine::DiscoveryStateMachine::Delegate, private stateMachine::CommandStateMachine::Delegate
 {
 public:
@@ -627,7 +629,7 @@ private:
 				cobsBytesRead = 0;
 			}
 
-			auto const err = poll(&pollfd, 1, _timeout); // timeout so we can check _shouldTerminate
+			auto const err = poll(&pollfd, 1, SerialReceiveLoopTimeout); // timeout so we can check _shouldTerminate
 			if (err < 0)
 			{
 				break;
@@ -814,7 +816,6 @@ private:
 	std::thread _captureThread{};
 	friend class EthernetPacketDispatcher<ProtocolInterfaceSerialImpl>;
 	EthernetPacketDispatcher<ProtocolInterfaceSerialImpl> _ethernetPacketDispatcher{ this, _stateMachineManager };
-	const int _timeout = 250u;
 };
 
 ProtocolInterfaceSerial::ProtocolInterfaceSerial(std::string const& networkInterfaceName, std::string const& executorName)
