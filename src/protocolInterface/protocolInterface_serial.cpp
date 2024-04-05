@@ -52,6 +52,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
+#include <termios.h>
 #ifdef __linux__
 #	include <sys/sysmacros.h>
 #endif
@@ -63,6 +64,8 @@ namespace avdecc
 namespace protocol
 {
 
+static const std::map<std::size_t, speed_t> SpeedMap = { { 9600, B9600 }, { 19200, B19200 }, { 38400, B38400 }, { 57600, B57600 }, { 76800, B76800 }, { 115200, B115200 }, { 230400, B230400 } };
+
 class ProtocolInterfaceSerialImpl final : public ProtocolInterfaceSerial, private stateMachine::ProtocolInterfaceDelegate, private stateMachine::AdvertiseStateMachine::Delegate, private stateMachine::DiscoveryStateMachine::Delegate, private stateMachine::CommandStateMachine::Delegate
 {
 public:
@@ -73,34 +76,30 @@ public:
 	ProtocolInterfaceSerialImpl(std::string const& networkInterfaceName, std::string const& executorName)
 		: ProtocolInterfaceSerial(networkInterfaceName, executorName)
 	{
+		auto deviceNameParameters = utils::tokenizeString(networkInterfaceName, '@', false);
+
+		if (deviceNameParameters.size() < 1 || deviceNameParameters.size() > 2)
+		{
+			throw Exception(Error::InvalidParameters, "Expected serial port device name format path[@speed]");
+		}
+
 		// Get file descriptor
-		_fd = ::open(networkInterfaceName.c_str(), O_RDWR);
+		_fd = ::open(deviceNameParameters[0].c_str(), O_RDWR);
 		if (_fd < 0)
 		{
 			throw Exception(Error::TransportError, "Failed to open serial port");
 		}
 
-		auto flags = ::fcntl(_fd, F_GETFL, 0);
-		if ((flags & O_NONBLOCK) == 0)
+		auto error = configureNonBlockingIO();
+		if (error == Error::NoError)
 		{
-			if (::fcntl(_fd, F_SETFL, flags | O_NONBLOCK) < 0)
-			{
-				throw Exception(Error::TransportError, "Failed to enable non-blocking I/O on serial port");
-			}
+			std::size_t speed = (deviceNameParameters.size() > 1) ? std::stoi(deviceNameParameters[1]) : 0;
+			error = configureTty(speed);
 		}
-
-#if 0
-		// optionally disambiguate multiple ProtocolInterfaceSerial instances by placing
-		// device major/minor ID in MAC address
-
-		struct ::stat statbuf;
-		if (fstat(_fd, &statbuf) == 0)
+		if (error != Error::NoError)
 		{
-			_peerAddress[3] = major(statbuf.st_rdev) & 0xff;
-			_peerAddress[4] = minor(statbuf.st_rdev) >> 8 & 0xff;
-			_peerAddress[5] = minor(statbuf.st_rdev) & 0xff;
+			throw Exception(error, "Failed to set serial port parameters");
 		}
-#endif
 
 		// Start the capture thread
 		_captureThread = std::thread(
@@ -595,7 +594,7 @@ private:
 
 	static constexpr std::size_t AvtpMaxCobsEncodedPayloadLength = (1 + AvtpMaxPayloadLength + _COBS_BUFFER_PAD(AvtpMaxPayloadLength) + 1);
 
-	enum class State : std::uint8_t
+	enum class SerialState : std::uint8_t
 	{
 		Synchronizing,
 		Reading,
@@ -606,7 +605,7 @@ private:
 	{
 		struct ::pollfd pollfd;
 		std::uint8_t cobsEncodedBuffer[AvtpMaxCobsEncodedPayloadLength];
-		State state = State::Synchronizing;
+		SerialState state = SerialState::Synchronizing;
 		size_t cobsBytesRead;
 
 		pollfd.fd = _fd;
@@ -618,36 +617,48 @@ private:
 			pollfd.events = POLLIN;
 			pollfd.revents = 0;
 
-			if (state == State::Synchronizing)
+			if (state == SerialState::Synchronizing)
+			{
 				cobsBytesRead = 0;
+			}
 
 			auto const err = poll(&pollfd, 1, _timeout); // timeout so we can check _shouldTerminate
 			if (err < 0)
+			{
 				break;
+			}
 			else if (err == 0 || pollfd.events != POLLIN)
+			{
 				continue; // timed out or no input events
+			}
 
 			auto const bytesRead = read(_fd, readBuffer, sizeof(readBuffer));
 			if (bytesRead == 0 || (bytesRead < 0 && errno == EAGAIN))
+			{
 				continue;
+			}
 			else if (bytesRead < 0)
+			{
 				break;
+			}
 
 			for (auto i = 0; i < bytesRead; i++)
 			{
 				if (cobsBytesRead >= AvtpMaxCobsEncodedPayloadLength)
 				{
-					state = State::Synchronizing;
+					state = SerialState::Synchronizing;
 					break;
 				}
 
 				switch (state)
 				{
-					case State::Synchronizing:
+					case SerialState::Synchronizing:
 						if (readBuffer[i] == COBS_DELIM_BYTE)
-							state = State::Reading;
+						{
+							state = SerialState::Reading;
+						}
 						break;
-					case State::Reading:
+					case SerialState::Reading:
 						if (readBuffer[i] != COBS_DELIM_BYTE)
 						{
 							cobsEncodedBuffer[cobsBytesRead++] = readBuffer[i];
@@ -655,10 +666,10 @@ private:
 						}
 						else
 						{
-							state = State::Finished;
+							state = SerialState::Finished;
 							[[fallthrough]]; // end of frame marker
 						}
-					case State::Finished: {
+					case SerialState::Finished: {
 						std::uint8_t payloadBuffer[AvtpMaxPayloadLength];
 						auto payloadLength = cobsDecode(cobsEncodedBuffer, cobsBytesRead, payloadBuffer, sizeof(payloadBuffer));
 						if (payloadLength != 0)
@@ -666,7 +677,7 @@ private:
 							auto message = la::avdecc::MemoryBuffer{ payloadBuffer, payloadLength };
 							processRawPacket(std::move(message));
 						}
-						state = State::Synchronizing;
+						state = SerialState::Synchronizing;
 						break;
 					}
 				}
@@ -691,21 +702,79 @@ private:
 
 			auto const err = poll(&pollfd, 1, -1);
 			if (err < 0)
+			{
 				return Error::TransportError;
+			}
 
 			if (pollfd.revents != POLLOUT)
+			{
 				continue;
+			}
 
 			auto bytesWritten = write(_fd, &cobsEncodedBuffer[cobsBytesEncoded - cobsBytesRemaining], cobsBytesRemaining);
 			if (bytesWritten < 0)
 			{
 				if (errno == EAGAIN)
+				{
 					continue;
+				}
 				else
+				{
 					return Error::TransportError;
+				}
 			}
 
 			cobsBytesRemaining -= bytesWritten;
+		}
+
+		return Error::NoError;
+	}
+
+	Error configureNonBlockingIO()
+	{
+		auto flags = ::fcntl(_fd, F_GETFL, 0);
+		if ((flags & O_NONBLOCK) == 0)
+		{
+			if (::fcntl(_fd, F_SETFL, flags | O_NONBLOCK) < 0)
+			{
+				return Error::TransportError;
+			}
+		}
+
+		return Error::NoError;
+	}
+
+	Error configureTty(std::size_t speed)
+	{
+		struct termios tty;
+
+		if (tcgetattr(_fd, &tty) < 0)
+		{
+			return Error::TransportError;
+		}
+
+		if (speed != 0)
+		{
+			if (SpeedMap.find(speed) == SpeedMap.end())
+			{
+				return Error::InvalidParameters;
+			}
+
+			auto mapped = SpeedMap.at(speed);
+			cfsetispeed(&tty, mapped);
+			cfsetospeed(&tty, mapped);
+		}
+
+		// set no parity, 1 stop bit
+		tty.c_cflag &= ~(PARENB | CSTOPB | CSIZE);
+		// set 8 data bits, local mode, receiver enabled
+		tty.c_cflag |= (CS8 | CLOCAL | CREAD);
+		// disable canonical mode and signals
+		tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+		if (tcsetattr(_fd, TCSANOW, &tty) < 0)
+		{
+			return Error::TransportError;
 		}
 
 		return Error::NoError;
@@ -715,7 +784,6 @@ private:
 	watchDog::WatchDog::SharedPointer _watchDogSharedPointer{ watchDog::WatchDog::getInstance() };
 	watchDog::WatchDog& _watchDog{ *_watchDogSharedPointer };
 	int _fd{ -1 };
-	// networkInterface::MacAddress _peerAddress{ 0x0a, 0xe9, 0x1b }; // PADL CID
 	bool _shouldTerminate{ false };
 	mutable stateMachine::Manager _stateMachineManager{ this, this, this, this, this };
 	std::thread _captureThread{};
