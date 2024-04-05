@@ -86,7 +86,7 @@ public:
 			throw Exception(Error::InvalidParameters, "Local domain socket path too long");
 		}
 		strncpy(sun.sun_path, networkInterfaceName.c_str(), sizeof(sun.sun_path) - 1);
-#ifdef SUN_LEN
+#if defined(__APPLE__)
 		sun.sun_len = SUN_LEN(&sun);
 #endif
 
