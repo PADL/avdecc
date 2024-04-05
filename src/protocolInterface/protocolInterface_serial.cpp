@@ -73,6 +73,10 @@ static const std::map<std::size_t, speed_t> SpeedMap = { { 9600, B9600 }, { 1920
 
 static constexpr int SerialReceiveLoopTimeout = 250u;
 
+// we need a valid non-zero MAC address to represent the serial port
+// use a locally assigned address assigned by the author (PADL CID)
+static constexpr networkInterface::MacAddress Serial_Mac_Address = { 0x0A, 0xE9, 0x1B, 0xFF, 0xFF, 0xFF };
+
 class ProtocolInterfaceSerialImpl final : public ProtocolInterfaceSerial, private stateMachine::ProtocolInterfaceDelegate, private stateMachine::AdvertiseStateMachine::Delegate, private stateMachine::DiscoveryStateMachine::Delegate, private stateMachine::CommandStateMachine::Delegate
 {
 public:
@@ -587,8 +591,8 @@ private:
 
 				auto etherLayer2 = EtherLayer2{};
 				etherLayer2.setEtherType(AvtpEtherType);
-				etherLayer2.setSrcAddress(getMacAddress()); // zero
-				etherLayer2.setDestAddress(getMacAddress()); // zero
+				etherLayer2.setSrcAddress(Serial_Mac_Address);
+				etherLayer2.setDestAddress(getMacAddress()); // initialized to zero by super class
 
 				// Try to detect possible deadlock
 				{
