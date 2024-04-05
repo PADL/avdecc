@@ -52,9 +52,12 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <poll.h>
-#include <termios.h>
 #ifdef __linux__
 #	include <sys/sysmacros.h>
+#	include <sys/ioctl.h>
+#	include <asm/termbits.h>
+#else
+#	include <termios.h>
 #endif
 
 namespace la
@@ -64,7 +67,9 @@ namespace avdecc
 namespace protocol
 {
 
+#ifndef __linux__
 static const std::map<std::size_t, speed_t> SpeedMap = { { 9600, B9600 }, { 19200, B19200 }, { 38400, B38400 }, { 57600, B57600 }, { 115200, B115200 }, { 230400, B230400 } };
+#endif
 
 class ProtocolInterfaceSerialImpl final : public ProtocolInterfaceSerial, private stateMachine::ProtocolInterfaceDelegate, private stateMachine::AdvertiseStateMachine::Delegate, private stateMachine::DiscoveryStateMachine::Delegate, private stateMachine::CommandStateMachine::Delegate
 {
@@ -746,15 +751,30 @@ private:
 
 	Error configureTty(std::size_t speed)
 	{
+#ifdef __linux__
+		struct termios2 tty;
+
+		if (ioctl(_fd, TCGETS2, &tty) < 0)
+#else
 		struct termios tty;
 
 		if (tcgetattr(_fd, &tty) < 0)
+#endif
 		{
 			return Error::TransportError;
 		}
 
 		if (speed != 0)
 		{
+#ifdef __linux__
+			tty.c_cflag &= ~(CBAUD);
+			tty.c_cflag |= BOTHER;
+			tty.c_ospeed = speed;
+
+			tty.c_cflag &= ~(CBAUD << IBSHIFT);
+			tty.c_cflag |= BOTHER << IBSHIFT;
+			tty.c_ispeed = speed;
+#else
 			if (SpeedMap.find(speed) == SpeedMap.end())
 			{
 				return Error::InvalidParameters;
@@ -763,6 +783,7 @@ private:
 			auto mapped = SpeedMap.at(speed);
 			cfsetispeed(&tty, mapped);
 			cfsetospeed(&tty, mapped);
+#endif
 		}
 
 		// set no parity, 1 stop bit
@@ -772,7 +793,11 @@ private:
 		// disable canonical mode and signals
 		tty.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
 
+#ifdef __linux__
+		if (ioctl(_fd, TCSETS2, &tty) < 0)
+#else
 		if (tcsetattr(_fd, TCSANOW, &tty) < 0)
+#endif
 		{
 			return Error::TransportError;
 		}
