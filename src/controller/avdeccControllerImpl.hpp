@@ -707,14 +707,14 @@ private:
 	void addTalkerStreamConnection(ControlledEntityImpl* const talkerEntity, entity::model::StreamIndex const talkerStreamIndex, entity::model::StreamIdentification const& listenerStream, TreeModelAccessStrategy::NotFoundBehavior const notFoundBehavior) const;
 #ifdef ENABLE_AVDECC_FEATURE_JSON
 	static SharedControlledEntityImpl loadControlledEntityFromJson(nlohmann::json const& object, entity::model::jsonSerializer::Flags const flags, ControlledEntityImpl::LockInformation::SharedPointer const& lockInfo);
-	std::tuple<avdecc::jsonSerializer::DeserializationError, std::string> registerVirtualControlledEntity(SharedControlledEntityImpl&& controlledEntity) noexcept;
-	SharedControlledEntityImpl deregisterVirtualControlledEntity(UniqueIdentifier const entityID) noexcept; // Deregister a virtual entity, returning the associated SharedControlledEntity (not locked)
 	static SharedControlledEntityImpl createControlledEntityFromJson(nlohmann::json const& object, entity::model::jsonSerializer::Flags const flags, ControlledEntityImpl::LockInformation::SharedPointer const& lockInfo); // Throws DeserializationException
 	static std::tuple<avdecc::jsonSerializer::DeserializationError, std::string, std::vector<SharedControlledEntityImpl>> deserializeJsonNetworkState(std::string const& filePath, entity::model::jsonSerializer::Flags const flags, bool const continueOnError, ControlledEntityImpl::LockInformation::SharedPointer const& lockInfo) noexcept;
 	static std::tuple<avdecc::jsonSerializer::DeserializationError, std::string, SharedControlledEntityImpl> deserializeJson(std::string const& filePath, entity::model::jsonSerializer::Flags const flags, ControlledEntityImpl::LockInformation::SharedPointer const& lockInfo) noexcept;
 	static std::tuple<avdecc::jsonSerializer::DeserializationError, std::string, entity::model::EntityTree, UniqueIdentifier> deserializeJsonEntityModel(std::string const& filePath, bool const isBinaryFormat) noexcept;
-	static void setupDetachedVirtualControlledEntity(ControlledEntityImpl& entity) noexcept;
 #endif // ENABLE_AVDECC_FEATURE_JSON
+	std::tuple<avdecc::jsonSerializer::DeserializationError, std::string> registerVirtualControlledEntity(SharedControlledEntityImpl&& controlledEntity) noexcept;
+	SharedControlledEntityImpl deregisterVirtualControlledEntity(UniqueIdentifier const entityID) noexcept; // Deregister a virtual entity, returning the associated SharedControlledEntity (not locked)
+	static void setupDetachedVirtualControlledEntity(ControlledEntityImpl& entity) noexcept;
 	entity::addressAccess::Tlv makeNextReadDeviceMemoryTlv(std::uint64_t const baseAddress, std::uint64_t const length, std::uint64_t const currentSize) const noexcept;
 	entity::addressAccess::Tlv makeNextWriteDeviceMemoryTlv(std::uint64_t const baseAddress, DeviceMemoryBuffer const& memoryBuffer, std::uint64_t const currentSize) const noexcept;
 	void onUserReadDeviceMemoryResult(UniqueIdentifier const targetEntityID, entity::ControllerEntity::AaCommandStatus const status, entity::addressAccess::Tlvs const& tlvs, std::uint64_t const baseAddress, std::uint64_t const length, ReadDeviceMemoryProgressHandler const& progressHandler, ReadDeviceMemoryCompletionHandler const& completionHandler, DeviceMemoryBuffer&& memoryBuffer) const noexcept;
