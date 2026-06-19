@@ -23,6 +23,7 @@
 */
 
 #include "la/avdecc/internals/serialization.hpp"
+#include "la/avdecc/internals/protocolAdpdu.hpp"
 #include "la/avdecc/internals/protocolAemAecpdu.hpp"
 #include "la/avdecc/internals/protocolAaAecpdu.hpp"
 #include "la/avdecc/watchDog.hpp"
@@ -50,6 +51,24 @@
 #	include <csignal>
 #endif // __linux__
 
+// When ENABLE_AVDECC_PCAP_MULTICAST_JOIN is set, the pcap interface is opened without promiscuous
+// mode and instead explicitly joins the AVDECC control multicast groups (falling back to
+// promiscuous mode if that fails). This is implemented on Linux only: there the membership is bound
+// to the pcap socket via PACKET_ADD_MEMBERSHIP and so is released automatically when the socket is
+// closed. On BSD/macOS the equivalent (SIOCADDMULTI) is an interface-global membership that is not
+// released on close and would require explicit teardown, so the option is rejected on those
+// platforms (and Windows) rather than silently falling back to promiscuous mode.
+#if defined(ENABLE_AVDECC_PCAP_MULTICAST_JOIN)
+#	if !defined(__linux__)
+#		error "ENABLE_AVDECC_PCAP_MULTICAST_JOIN is only supported on Linux"
+#	endif // !__linux__
+#	define LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS 1
+#	include <cstring>
+#	include <sys/socket.h>
+#	include <net/if.h>
+#	include <linux/if_packet.h>
+#endif // ENABLE_AVDECC_PCAP_MULTICAST_JOIN
+
 namespace la
 {
 namespace avdecc
@@ -66,49 +85,44 @@ public:
 	ProtocolInterfacePcapImpl(std::string const& networkInterfaceID, std::string const& executorName)
 		: ProtocolInterfacePcap(networkInterfaceID, executorName)
 	{
-		static constexpr int PCAP_BufferSize = 65536;
 		static constexpr int PCAP_PromiscMode = 1;
-		static constexpr int PCAP_TimeoutMsec = 5;
 
 		// Should always be supported. Cannot create a PCap ProtocolInterface if it's not supported.
 		AVDECC_ASSERT(isSupported(), "Should always be supported. Cannot create a PCap ProtocolInterface if it's not supported");
 
-		// Open pcap on specified network interface
-		std::array<char, PCAP_ERRBUF_SIZE> errbuf;
-#ifdef _WIN32
-		// NPF device name
-		auto const pcapInterfaceName = std::string("\\Device\\NPF_") + networkInterfaceID;
-#else // !_WIN32
-		auto const pcapInterfaceName = networkInterfaceID;
-#endif // _WIN32
-		auto pcap = _pcapLibrary.open_live((pcapInterfaceName).c_str(), PCAP_BufferSize, PCAP_PromiscMode, PCAP_TimeoutMsec, errbuf.data());
-		// Failed to open interface (might be disabled)
-		if (pcap == nullptr)
-		{
-#ifdef _WIN32
-			// Try without NPF prefix
-			pcap = _pcapLibrary.open_live((networkInterfaceID).c_str(), PCAP_BufferSize, PCAP_PromiscMode, PCAP_TimeoutMsec, errbuf.data());
-			// Let's assume it's Win10pcap
-			if (pcap != nullptr)
-			{
-				throw Exception(Error::TransportError, "Win10Pcap is not supported. Please uninstall it and either use WinPcap or nPcap which are both compatible.");
-			}
-#endif // _WIN32
-			throw Exception(Error::TransportError, errbuf.data());
-		}
-
-		// Configure pcap filtering to ignore packets of other protocols
-		struct bpf_program fcode;
-		std::stringstream ss;
-		ss << "ether proto 0x" << std::hex << AvtpEtherType;
-		if (_pcapLibrary.compile(pcap, &fcode, ss.str().c_str(), 1, 0xffffffff) < 0)
-			throw Exception(Error::TransportError, "Failed to compile ether filter");
-		if (_pcapLibrary.setfilter(pcap, &fcode) < 0)
-			throw Exception(Error::TransportError, "Failed to set ether filter");
-		_pcapLibrary.freecode(&fcode);
+#ifdef LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
+		// Open without promiscuous mode (pass 0 instead of PCAP_PromiscMode): instead we explicitly
+		// join the AVDECC control multicast groups below (see the joinMulticastGroup() calls),
+		// reopening with promiscuous mode if that fails. Promiscuous mode sets IFF_PROMISC but does
+		// not add those groups to the device multicast filter; on a hardware-offloaded / DSA switch
+		// (e.g. Marvell mv88e6xxx) no MDB entry is then programmed, so the switch ASIC never forwards
+		// the AVDECC multicast (ADP advertisements) up to the CPU port and discovery silently fails.
+		// Joining the group programs the multicast filter (which propagates to the switch MDB) so it
+		// is delivered.
+		auto pcap = openCaptureInterface(networkInterfaceID, 0);
+#else // !LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
+		// Open pcap on the specified network interface and apply the AVDECC ether-type filter
+		auto pcap = openCaptureInterface(networkInterfaceID, PCAP_PromiscMode);
+#endif // LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
 
 		// Get socket descriptor
 		_fd = _pcapLibrary.fileno(pcap);
+
+#ifdef LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
+		// Explicitly join the AVDECC control multicast groups instead of relying on promiscuous mode
+		// (see the PCAP_PromiscMode comment above). ADP (discovery) and ACMP (connection management)
+		// share the same multicast destination; AECP AEM Identify uses its own. If joining either
+		// group fails, reopen the interface with promiscuous mode enabled (the same path the other
+		// platforms always use) so capture keeps working.
+		if (!joinMulticastGroup(networkInterfaceID, Adpdu::Multicast_Mac_Address)
+			|| !joinMulticastGroup(networkInterfaceID, AemAecpdu::Identify_Mac_Address))
+		{
+			LOG_PROTOCOL_INTERFACE_WARN(networkInterface::MacAddress{}, networkInterface::MacAddress{}, "Failed to join the AVDECC multicast groups, falling back to promiscuous mode");
+			_pcapLibrary.close(pcap);
+			pcap = openCaptureInterface(networkInterfaceID, PCAP_PromiscMode);
+			_fd = _pcapLibrary.fileno(pcap);
+		}
+#endif // LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
 
 		// Store our pcap handle in a unique_ptr so the PCap library will be cleaned upon destruction of 'this'
 		// _pcapLibrary (accessed through the capture of 'this') will still be valid during destruction since it was declared before _pcap (thus destroyed after it)
@@ -678,6 +692,68 @@ private:
 		// Make a copy of the pcap message and forward to the processing queue
 		auto pcapMessage = la::avdecc::MemoryBuffer{ pkt_data, header->caplen };
 		self->processRawPacket(std::move(pcapMessage));
+	}
+
+#ifdef LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
+	/** Joins a single link-layer multicast group on the capture interface, so its frames are delivered without relying on promiscuous mode. The membership is bound to the pcap socket and released when it is closed. Returns true on success. */
+	bool joinMulticastGroup(std::string const& interfaceName, networkInterface::MacAddress const& macAddress) const noexcept
+	{
+		auto const ifIndex = ::if_nametoindex(interfaceName.c_str());
+		if (ifIndex == 0)
+		{
+			return false;
+		}
+		// PACKET_MR_MULTICAST calls dev_mc_add() on the interface, which programs the device multicast filter (and any upstream switch MDB).
+		auto mreq = packet_mreq{};
+		mreq.mr_ifindex = static_cast<int>(ifIndex);
+		mreq.mr_type = PACKET_MR_MULTICAST;
+		mreq.mr_alen = static_cast<unsigned short>(macAddress.size());
+		std::memcpy(mreq.mr_address, macAddress.data(), macAddress.size());
+		return ::setsockopt(_fd, SOL_PACKET, PACKET_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) == 0;
+	}
+#endif // LA_AVDECC_PCAP_JOIN_MULTICAST_GROUPS
+
+	/** Opens the pcap capture handle on the given interface with the requested promiscuous mode and applies the AVDECC ether-type filter. Returns the opened handle, throwing an Exception on failure. */
+	pcap_t* openCaptureInterface(std::string const& interfaceName, int promiscMode)
+	{
+		static constexpr int PCAP_BufferSize = 65536;
+		static constexpr int PCAP_TimeoutMsec = 5;
+
+		// Open pcap on specified network interface
+		std::array<char, PCAP_ERRBUF_SIZE> errbuf;
+#ifdef _WIN32
+		// NPF device name
+		auto const pcapInterfaceName = std::string("\\Device\\NPF_") + interfaceName;
+#else // !_WIN32
+		auto const pcapInterfaceName = interfaceName;
+#endif // _WIN32
+		auto pcap = _pcapLibrary.open_live((pcapInterfaceName).c_str(), PCAP_BufferSize, promiscMode, PCAP_TimeoutMsec, errbuf.data());
+		// Failed to open interface (might be disabled)
+		if (pcap == nullptr)
+		{
+#ifdef _WIN32
+			// Try without NPF prefix
+			pcap = _pcapLibrary.open_live((interfaceName).c_str(), PCAP_BufferSize, promiscMode, PCAP_TimeoutMsec, errbuf.data());
+			// Let's assume it's Win10pcap
+			if (pcap != nullptr)
+			{
+				throw Exception(Error::TransportError, "Win10Pcap is not supported. Please uninstall it and either use WinPcap or nPcap which are both compatible.");
+			}
+#endif // _WIN32
+			throw Exception(Error::TransportError, errbuf.data());
+		}
+
+		// Configure pcap filtering to ignore packets of other protocols
+		struct bpf_program fcode;
+		std::stringstream ss;
+		ss << "ether proto 0x" << std::hex << AvtpEtherType;
+		if (_pcapLibrary.compile(pcap, &fcode, ss.str().c_str(), 1, 0xffffffff) < 0)
+			throw Exception(Error::TransportError, "Failed to compile ether filter");
+		if (_pcapLibrary.setfilter(pcap, &fcode) < 0)
+			throw Exception(Error::TransportError, "Failed to set ether filter");
+		_pcapLibrary.freecode(&fcode);
+
+		return pcap;
 	}
 
 	Error sendPacket(SerializationBuffer const& buffer) const noexcept
