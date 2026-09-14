@@ -159,12 +159,16 @@ bool LA_AVDECC_CALL_CONVENTION setCurrentThreadName(std::string const& name)
 	return true;
 
 #elif defined(__unix__) && !defined(__CYGWIN__)
+#	if defined(__linux__)
+	// Linux limits a thread name to 15 characters, and pthread_setname_np fails with ERANGE for a longer one, leaving the thread with the name it inherited from its creator
+	auto const threadName = name.substr(0, 15);
+#	else // !__linux__
+	auto const& threadName = name;
+#	endif // __linux__
 #	if (__GLIBC__ * 1000 + __GLIBC_MINOR__) >= 2012
-	pthread_setname_np(pthread_self(), name.c_str());
-	return true;
+	return pthread_setname_np(pthread_self(), threadName.c_str()) == 0;
 #	else // !GLIBC >= 2012
-	prctl(PR_SET_NAME, name.c_str(), 0, 0, 0);
-	return true;
+	return prctl(PR_SET_NAME, threadName.c_str(), 0, 0, 0) == 0;
 #	endif
 
 #else
