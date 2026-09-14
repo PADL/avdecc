@@ -231,6 +231,11 @@ void Manager::startStateMachines() noexcept
 				auto& watchDog = *watchDogSharedPointer;
 				watchDog.registerWatch("avdecc::StateMachine", std::chrono::milliseconds{ 1000u }, true);
 
+				// Commands waiting to time out, be retried or leave their queue need checking often, but nothing else does:
+				// advertising, discovery and remote entity timeouts are all hundreds of milliseconds or more
+				constexpr auto PendingCommandsInterval = std::chrono::milliseconds{ 5u };
+				constexpr auto IdleInterval = std::chrono::milliseconds{ 50u };
+
 				while (!_shouldTerminate)
 				{
 					// Check for local entities announcement
@@ -249,7 +254,7 @@ void Manager::startStateMachines() noexcept
 					watchDog.alive("avdecc::StateMachine", true);
 
 					// Wait a little bit so we don't burn the CPU
-					std::this_thread::sleep_for(std::chrono::milliseconds(5));
+					std::this_thread::sleep_for(_commandStateMachine.hasPendingCommands() ? PendingCommandsInterval : IdleInterval);
 				}
 				watchDog.unregisterWatch("avdecc::StateMachine", true);
 			});

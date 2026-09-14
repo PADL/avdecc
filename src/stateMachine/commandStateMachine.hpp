@@ -66,6 +66,8 @@ public:
 	void unregisterLocalEntity(entity::LocalEntity& entity) noexcept;
 	void discardAECPCommandsTowardsEntity(la::avdecc::UniqueIdentifier const& entityID) noexcept;
 	void checkInflightCommandsTimeoutExpiracy() noexcept;
+	/** Whether any command is inflight, queued, or has an error to report, so that checkInflightCommandsTimeoutExpiracy has work to do soon */
+	bool hasPendingCommands() noexcept;
 	void handleAecpResponse(Aecpdu const& aecpdu) noexcept;
 	void handleAcmpResponse(Acmpdu const& acmpdu) noexcept;
 	ProtocolInterface::Error sendAecpCommand(Aecpdu::UniquePointer&& aecpdu, ProtocolInterface::AecpCommandResultHandler const& onResult) noexcept;

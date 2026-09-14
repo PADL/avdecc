@@ -265,6 +265,52 @@ void CommandStateMachine::checkInflightCommandsTimeoutExpiracy() noexcept
 	}
 }
 
+bool CommandStateMachine::hasPendingCommands() noexcept
+{
+	// Lock
+	auto const lg = std::lock_guard{ *_manager };
+
+	for (auto const& localEntityInfoKV : _commandEntities)
+	{
+		auto const& localEntityInfo = localEntityInfoKV.second;
+
+		if (!localEntityInfo.scheduledAecpErrors.empty() || !localEntityInfo.scheduledAcmpErrors.empty())
+		{
+			return true;
+		}
+		for (auto const& inflightKV : localEntityInfo.inflightAecpCommands)
+		{
+			if (!inflightKV.second.inflightCommands.empty())
+			{
+				return true;
+			}
+		}
+		for (auto const& queueKV : localEntityInfo.aecpCommandsQueue)
+		{
+			if (!queueKV.second.queuedCommands.empty())
+			{
+				return true;
+			}
+		}
+		for (auto const& inflightKV : localEntityInfo.inflightAcmpCommands)
+		{
+			if (!inflightKV.second.inflightCommands.empty())
+			{
+				return true;
+			}
+		}
+		for (auto const& queueKV : localEntityInfo.acmpCommandsQueue)
+		{
+			if (!queueKV.second.queuedCommands.empty())
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 void CommandStateMachine::handleAecpResponse(Aecpdu const& aecpdu) noexcept
 {
 	// Lock
