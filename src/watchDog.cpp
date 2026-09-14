@@ -27,6 +27,8 @@
 
 #include <unordered_map>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <string>
 #include <iostream>
 #include <stdlib.h> // std::getenv
@@ -51,6 +53,20 @@ private:
 		bool ignore{ false };
 	};
 
+	// Interval between two checks of all watches (the shortest maximumInterval registered is 500 msec)
+	static constexpr auto CheckInterval = std::chrono::milliseconds{ 100u };
+	// Interval between two checks for a debugger, which can be costly (on Linux, it reads /proc/self/status)
+	static constexpr auto DebuggerCheckInterval = std::chrono::milliseconds{ 1000u };
+	// Without asserts compiled in, a missed watch is only reported to observers, so with none registered nothing needs checking.
+	// registerObserver wakes the idle thread without taking the lock (so that an observer can register from a notification),
+	// so the idle thread also looks again this often, in case it missed that wakeup
+	static constexpr auto IdleInterval = std::chrono::milliseconds{ 10000u };
+#if defined(DEBUG) || defined(COMPILE_AVDECC_ASSERT)
+	static constexpr auto IsAssertCompiled = true;
+#else // !DEBUG && !COMPILE_AVDECC_ASSERT
+	static constexpr auto IsAssertCompiled = false;
+#endif // DEBUG || COMPILE_AVDECC_ASSERT
+
 public:
 	WatchDogImpl() noexcept
 	{
@@ -59,19 +75,41 @@ public:
 			[this]
 			{
 				utils::setCurrentThreadName("avdecc::watchDog");
+
+				auto isDebuggerPresent = false;
+				auto lastDebuggerCheck = std::chrono::steady_clock::time_point{};
+
+				auto lock = std::unique_lock{ _lock };
 				while (!_shouldTerminate)
 				{
+					// Nothing would act on a missed watch: wait for an observer rather than check
+					if (!IsAssertCompiled && _observers.countObservers() == 0)
+					{
+						_wakeCondition.wait_for(lock, IdleInterval,
+							[this]
+							{
+								return _shouldTerminate || _observers.countObservers() != 0;
+							});
+						continue;
+					}
+
 					// Check all watch
 					{
-						auto const lg = std::lock_guard{ _lock };
-
 						auto const currentTime = std::chrono::system_clock::now();
+
+						// Look for a debugger once in a while, rather than for every watch on every check
+						if (!_watched.empty() && std::chrono::steady_clock::now() - lastDebuggerCheck >= DebuggerCheckInterval)
+						{
+							isDebuggerPresent = utils::isDebuggerPresent();
+							lastDebuggerCheck = std::chrono::steady_clock::now();
+						}
+
 						for (auto& [threadId, watchedMap] : _watched)
 						{
 							for (auto& [name, watchInfo] : watchedMap)
 							{
 								// If debugger is present, update the last alive time and don't check the timeout
-								if (utils::isDebuggerPresent())
+								if (isDebuggerPresent)
 								{
 									watchInfo.lastAlive = currentTime;
 								}
@@ -94,15 +132,23 @@ public:
 							}
 						}
 					}
-					// Wait a little bit so we don't burn the CPU
-					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+					// Wait until the next check, unless asked to terminate first
+					_wakeCondition.wait_for(lock, CheckInterval,
+						[this]
+						{
+							return _shouldTerminate;
+						});
 				}
 			});
 	}
 	virtual ~WatchDogImpl() noexcept override
 	{
 		// Notify the thread we are shutting down
-		_shouldTerminate = true;
+		{
+			auto const lg = std::lock_guard{ _lock };
+			_shouldTerminate = true;
+		}
+		_wakeCondition.notify_all();
 
 		// Wait for the thread to complete its pending tasks
 		if (_watchThread.joinable())
@@ -120,6 +166,9 @@ private:
 	virtual void registerObserver(Observer* const observer) noexcept override
 	{
 		_observers.registerObserver(observer);
+
+		// Wake the thread, which may be idle for want of an observer (not under the lock, see IdleInterval)
+		_wakeCondition.notify_all();
 	}
 
 	virtual void unregisterObserver(Observer* const observer) noexcept override
@@ -185,6 +234,7 @@ private:
 	std::unordered_map<std::thread::id, WatchedMap> _watched{};
 	//WatchedMap _watched{};
 	bool _shouldTerminate{ false };
+	std::condition_variable _wakeCondition{};
 	std::thread _watchThread{};
 	Subject _observers{};
 };
