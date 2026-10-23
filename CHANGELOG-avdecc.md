@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Local domain socket ProtocolInterface not binding its socket, so the entity had no address to reply to on Linux (the socket is now autobound in the abstract namespace on Linux, and bound to a unique path in the temporary directory on other platforms)
 - Local domain socket ProtocolInterface not reconnecting to the entity socket after the entity was restarted
 - Local domain socket ProtocolInterface ignoring receive errors (busy-looping instead of reporting a transport error), testing the requested poll events instead of the returned ones, and processing truncated datagrams
+- Local domain socket ProtocolInterface giving received ACMP messages the local address as destination, so no ACMP response matched its in-flight command
 - Data race on the termination flag of the local domain socket ProtocolInterface
 
 ## [4.3.1] - 2025-12-19
